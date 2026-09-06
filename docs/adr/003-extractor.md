@@ -51,14 +51,13 @@ data-product-price="([\d.]+)"
 "mainPrice":\s*"?([\d.,]+)"
 ```
 
-#### 3. Default (fallback restrito)
+#### 3. Default (DESABILITADO em v0)
 
-Se nenhum seletor configurado, tenta apenas padrões de dados estruturados:
+**NÃO há fallback automático.** Se `css_selector` e `regex_pattern` estiverem vazios, o worker **falha a coleta** e não posta observação.
 
-1. `"price":\s*"?([\d.,]+)"?` — JSON-LD / schema.org
-2. `data-price="([\d.,]+)"` — data attributes HTML5
+Motivo: fallbacks genéricos como `"price":` ou `R\$\s*` podem capturar preço de kit/combo em vez do unitário, corrompendo a série.
 
-**NÃO** tenta `R\$\s*` genérico para evitar capturar kit/combo.
+Regra v0: **todo monitor DEVE ter css_selector ou regex_pattern configurado.**
 
 ### Comportamento em caso de ambiguidade
 
@@ -71,6 +70,8 @@ if len(distinctPrices) > 1 {
 ```
 
 Isso garante que um seletor mal configurado não corrompa a série com preços de kit.
+
+**Importante:** O worker usa `ExtractCSSStrict` (não `ExtractCSS`). Se o DOM tiver kit price antes do unit price e o seletor for genérico (`.price-value`), a coleta falha em vez de postar o kit price.
 
 ## Parsing de valor
 
@@ -106,12 +107,19 @@ Ou via data attribute:
 
 ## Testes de regressão
 
-`worker/internal/extractor/extractor_test.go` inclui:
+`worker/internal/extractor/extractor_test.go` (unit tests):
 
 - `TestExtractCSS_AraujoUnitPrice` — seletor específico retorna 47.99
 - `TestExtractCSS_KitPriceNotReturned` — nunca retorna 143.97/179.96
 - `TestExtractCSSStrict_AmbiguousMultiMatch` — seletor genérico falha
 - `TestInvariant_ScrapeFailureNoInventedPrice` — sem match = erro
+
+`worker/cmd/collector/collector_test.go` (integration tests):
+
+- `TestCollector_ScrapePriceRejectsBroadSelectorWithKitFirst` — **Bug 1 fix**: DOM com kit price antes do unit price + seletor `.price-value` → erro, não posta 143.97
+- `TestCollector_ScrapePriceAcceptsSpecificSelector` — seletor específico funciona
+- `TestCollector_ScrapePriceRejectsNoSelector` — **Bug 3 fix**: sem seletor configurado → erro
+- `TestCollector_ScrapePriceWithRegexWorks` — regex funciona
 
 ## Future considerations
 

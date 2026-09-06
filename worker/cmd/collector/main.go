@@ -215,14 +215,14 @@ func (c *Collector) scrapePrice(ctx context.Context, monitor MonitorURL) (decima
 	html := string(body)
 
 	if monitor.CSSSelector != nil && *monitor.CSSSelector != "" {
-		return ext.ExtractCSS(html, *monitor.CSSSelector)
+		return ext.ExtractCSSStrict(html, *monitor.CSSSelector)
 	}
 
 	if monitor.RegexPattern != nil && *monitor.RegexPattern != "" {
 		return ext.ExtractRegex(html, *monitor.RegexPattern)
 	}
 
-	return ext.ExtractDefault(html)
+	return decimal.Zero, fmt.Errorf("no css_selector or regex_pattern configured for monitor %d", monitor.ID)
 }
 
 func (c *Collector) postObservacao(ctx context.Context, monitor MonitorURL, sku *SKU, price decimal.Decimal) (*PrecoObservado, error) {
