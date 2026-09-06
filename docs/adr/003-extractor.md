@@ -121,8 +121,27 @@ Ou via data attribute:
 - `TestCollector_ScrapePriceRejectsNoSelector` — **Bug 3 fix**: sem seletor configurado → erro
 - `TestCollector_ScrapePriceWithRegexWorks` — regex funciona
 
+## Limitação: WAF / Akamai 403
+
+Algumas PDPs (incluindo Araújo) são protegidas por WAF (Akamai, Cloudflare, etc.) que retornam **HTTP 403** para requests HTTP simples sem headers de browser ou cookies.
+
+Comportamento v0:
+- Collector faz `GET` com User-Agent básico
+- Se 403 → scrape falha → **não posta observação** (correto por spec)
+- Fixture HTML nos testes simula estrutura da página, não o WAF
+
+**Live e2e para targets protegidos requer follow-up:**
+- Headers realistas / cookies
+- Headless browser (Playwright, Puppeteer)
+- Proxy rotativo
+
+<!-- TODO: link GitHub issue quando criado (ex: "Araújo 403 - WAF bypass") -->
+
+Este PR não implementa anti-bot. O collector falha graciosamente.
+
 ## Future considerations
 
 - UI para testar seletores antes de salvar
 - Preview do preço extraído antes de ativar monitor
 - Validação: preço extraído deve estar em range razoável vs histórico
+- Browser-based scraping para sites com WAF
