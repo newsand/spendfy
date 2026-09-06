@@ -105,6 +105,7 @@ func (r *SetMonitorRequest) Validate() error {
 }
 
 type UpdateMonitorLimiarRequest struct {
+	MonitorID   int64        `json:"monitor_id,omitempty"`
 	LimiarModo  *LimiarModo      `json:"limiar_modo"`
 	LimiarValor *decimal.Decimal `json:"limiar_valor"`
 }

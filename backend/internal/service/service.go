@@ -138,3 +138,7 @@ func (s *Service) LogColeta(ctx context.Context, monitorID int64, success bool, 
 func (s *Service) ListTrackedSKUs(ctx context.Context) ([]domain.TrackedSKU, error) {
 	return s.repo.ListTrackedSKUs(ctx)
 }
+
+func (s *Service) ArchiveMonitor(ctx context.Context, skuID, monitorID int64) error {
+	return s.repo.ArchiveMonitor(ctx, skuID, monitorID)
+}

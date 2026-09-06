@@ -245,22 +245,9 @@ func (r *PostgresRepository) GetLastObservacaoByFonte(ctx context.Context, skuID
 }
 
 func (r *PostgresRepository) SetActiveMonitor(ctx context.Context, req *domain.SetMonitorRequest) (*domain.MonitorURL, error) {
-	tx, err := r.pool.Begin(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("begin tx: %w", err)
-	}
-	defer tx.Rollback(ctx)
-
-	_, err = tx.Exec(ctx, `
-		UPDATE monitor_urls SET ativo = FALSE, archived_at = NOW()
-		WHERE sku_id = $1 AND ativo = TRUE
-	`, req.SKUID)
-	if err != nil {
-		return nil, fmt.Errorf("archive previous monitor: %w", err)
-	}
-
+	// Multi-URL: add another active monitor; do NOT archive other URLs on the same SKU.
 	var monitor domain.MonitorURL
-	err = tx.QueryRow(ctx, `
+	err := r.pool.QueryRow(ctx, `
 		INSERT INTO monitor_urls (sku_id, url, ativo, limiar_modo, limiar_valor, css_selector, regex_pattern)
 		VALUES ($1, $2, TRUE, $3, $4, $5, $6)
 		RETURNING id, sku_id, url, ativo, limiar_modo, limiar_valor, css_selector, regex_pattern, created_at, archived_at
@@ -269,22 +256,23 @@ func (r *PostgresRepository) SetActiveMonitor(ctx context.Context, req *domain.S
 		&monitor.CSSSelector, &monitor.RegexPattern, &monitor.CreatedAt, &monitor.ArchivedAt,
 	)
 	if err != nil {
+		if isUniqueViolation(err) {
+			return nil, fmt.Errorf("monitor url already active for this sku: %w", err)
+		}
 		return nil, fmt.Errorf("create monitor: %w", err)
 	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("commit tx: %w", err)
-	}
-
 	return &monitor, nil
 }
 
 func (r *PostgresRepository) GetActiveMonitor(ctx context.Context, skuID int64) (*domain.MonitorURL, error) {
+	// Backward-compat: return the newest active monitor (multi-URL: prefer ListMonitorsBySKU).
 	var monitor domain.MonitorURL
 	err := r.pool.QueryRow(ctx, `
 		SELECT id, sku_id, url, ativo, limiar_modo, limiar_valor, css_selector, regex_pattern, created_at, archived_at
 		FROM monitor_urls
 		WHERE sku_id = $1 AND ativo = TRUE
+		ORDER BY created_at DESC
+		LIMIT 1
 	`, skuID).Scan(
 		&monitor.ID, &monitor.SKUID, &monitor.URL, &monitor.Ativo, &monitor.LimiarModo, &monitor.LimiarValor,
 		&monitor.CSSSelector, &monitor.RegexPattern, &monitor.CreatedAt, &monitor.ArchivedAt,
@@ -300,16 +288,27 @@ func (r *PostgresRepository) GetActiveMonitor(ctx context.Context, skuID int64) 
 
 func (r *PostgresRepository) UpdateMonitorLimiar(ctx context.Context, skuID int64, req *domain.UpdateMonitorLimiarRequest) (*domain.MonitorURL, error) {
 	var monitor domain.MonitorURL
-	err := r.pool.QueryRow(ctx, `
-		UPDATE monitor_urls SET
-			limiar_modo = $2,
-			limiar_valor = $3
-		WHERE sku_id = $1 AND ativo = TRUE
-		RETURNING id, sku_id, url, ativo, limiar_modo, limiar_valor, css_selector, regex_pattern, created_at, archived_at
-	`, skuID, req.LimiarModo, req.LimiarValor).Scan(
-		&monitor.ID, &monitor.SKUID, &monitor.URL, &monitor.Ativo, &monitor.LimiarModo, &monitor.LimiarValor,
-		&monitor.CSSSelector, &monitor.RegexPattern, &monitor.CreatedAt, &monitor.ArchivedAt,
-	)
+	var err error
+	if req.MonitorID != 0 {
+		err = r.pool.QueryRow(ctx, `
+			UPDATE monitor_urls SET limiar_modo = $3, limiar_valor = $4
+			WHERE id = $1 AND sku_id = $2 AND ativo = TRUE
+			RETURNING id, sku_id, url, ativo, limiar_modo, limiar_valor, css_selector, regex_pattern, created_at, archived_at
+		`, req.MonitorID, skuID, req.LimiarModo, req.LimiarValor).Scan(
+			&monitor.ID, &monitor.SKUID, &monitor.URL, &monitor.Ativo, &monitor.LimiarModo, &monitor.LimiarValor,
+			&monitor.CSSSelector, &monitor.RegexPattern, &monitor.CreatedAt, &monitor.ArchivedAt,
+		)
+	} else {
+		// Legacy: only valid if exactly one active monitor
+		err = r.pool.QueryRow(ctx, `
+			UPDATE monitor_urls SET limiar_modo = $2, limiar_valor = $3
+			WHERE sku_id = $1 AND ativo = TRUE
+			RETURNING id, sku_id, url, ativo, limiar_modo, limiar_valor, css_selector, regex_pattern, created_at, archived_at
+		`, skuID, req.LimiarModo, req.LimiarValor).Scan(
+			&monitor.ID, &monitor.SKUID, &monitor.URL, &monitor.Ativo, &monitor.LimiarModo, &monitor.LimiarValor,
+			&monitor.CSSSelector, &monitor.RegexPattern, &monitor.CreatedAt, &monitor.ArchivedAt,
+		)
+	}
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, domain.ErrMonitorNotFound
@@ -317,6 +316,20 @@ func (r *PostgresRepository) UpdateMonitorLimiar(ctx context.Context, skuID int6
 		return nil, fmt.Errorf("update monitor limiar: %w", err)
 	}
 	return &monitor, nil
+}
+
+func (r *PostgresRepository) ArchiveMonitor(ctx context.Context, skuID, monitorID int64) error {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE monitor_urls SET ativo = FALSE, archived_at = NOW()
+		WHERE id = $1 AND sku_id = $2 AND ativo = TRUE
+	`, monitorID, skuID)
+	if err != nil {
+		return fmt.Errorf("archive monitor: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrMonitorNotFound
+	}
+	return nil
 }
 
 func (r *PostgresRepository) ListMonitorsBySKU(ctx context.Context, skuID int64, activeOnly bool) ([]domain.MonitorURL, error) {
@@ -504,21 +517,31 @@ func (r *PostgresRepository) ListTrackedSKUs(ctx context.Context) ([]domain.Trac
 			return nil, err
 		}
 
-		rastreioRows, err := r.pool.Query(ctx, listRastreioSeriesForChartSQL, skuID)
+		rastreioRows, err := r.pool.Query(ctx, listRastreioSeriesByURLSQL, skuID)
 		if err != nil {
 			return nil, fmt.Errorf("list rastreio series for sku %d: %w", skuID, err)
 		}
+		byURL := map[string]*domain.RastreioSeries{}
+		var order []string
 		for rastreioRows.Next() {
+			var url string
 			var pt domain.PricePoint
-			if err := rastreioRows.Scan(&pt.Data, &pt.Preco); err != nil {
+			if err := rastreioRows.Scan(&url, &pt.Data, &pt.Preco); err != nil {
 				rastreioRows.Close()
 				return nil, fmt.Errorf("scan rastreio point: %w", err)
 			}
-			result[i].SeriesRastreio = append(result[i].SeriesRastreio, pt)
+			if _, ok := byURL[url]; !ok {
+				byURL[url] = &domain.RastreioSeries{URL: url}
+				order = append(order, url)
+			}
+			byURL[url].Points = append(byURL[url].Points, pt)
 		}
 		rastreioRows.Close()
 		if err := rastreioRows.Err(); err != nil {
 			return nil, err
+		}
+		for _, u := range order {
+			result[i].SeriesRastreioByURL = append(result[i].SeriesRastreioByURL, *byURL[u])
 		}
 	}
 

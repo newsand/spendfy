@@ -83,6 +83,10 @@ export const api = {
     })
   },
 
+  archiveMonitor(skuId, monitorId) {
+    return request(`/skus/${skuId}/monitor/${monitorId}`, { method: 'DELETE' })
+  },
+
   listMonitorHistory(skuId) {
     return request(`/skus/${skuId}/monitor/history`)
   },

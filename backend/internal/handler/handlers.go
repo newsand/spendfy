@@ -33,6 +33,7 @@ func (h *Handlers) RegisterRoutes(r chi.Router) {
 
 			r.Get("/{id}/monitor", h.GetMonitor)
 			r.Post("/{id}/monitor", h.SetMonitor)
+			r.Delete("/{id}/monitor/{monitorID}", h.ArchiveMonitor)
 			r.Put("/{id}/monitor/limiar", h.UpdateMonitorLimiar)
 			r.Get("/{id}/monitor/history", h.ListMonitorHistory)
 		})
@@ -349,6 +350,29 @@ func (h *Handlers) ListActiveMonitors(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, monitors)
+}
+
+
+func (h *Handlers) ArchiveMonitor(w http.ResponseWriter, r *http.Request) {
+	skuID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	monitorID, err := strconv.ParseInt(chi.URLParam(r, "monitorID"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid monitor id")
+		return
+	}
+	if err := h.svc.ArchiveMonitor(r.Context(), skuID, monitorID); err != nil {
+		if errors.Is(err, domain.ErrMonitorNotFound) {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handlers) ListTrackedSKUs(w http.ResponseWriter, r *http.Request) {

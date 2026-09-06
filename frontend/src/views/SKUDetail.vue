@@ -108,18 +108,21 @@
     </div>
 
     <div v-if="activeTab === 'monitor'" class="tab-content">
-      <div v-if="monitor" class="monitor-info">
-        <h3>Monitor Ativo</h3>
-        <p><strong>URL:</strong> <a :href="monitor.url" target="_blank">{{ monitor.url }}</a></p>
-        <p v-if="monitor.limiar_modo">
-          <strong>Limiar:</strong> 
-          {{ monitor.limiar_modo === 'absoluto' ? `R$ ${formatPrice(monitor.limiar_valor)}` : `${monitor.limiar_valor}%` }}
-          ({{ monitor.limiar_modo }})
-        </p>
-        <p v-else><em>Sem limiar de alerta configurado</em></p>
+      <div v-if="activeMonitors.length" class="monitor-info">
+        <h3>Monitores ativos (mesmo SKU · série por URL)</h3>
+        <div v-for="m in activeMonitors" :key="m.id" class="monitor-card">
+          <p><strong>URL:</strong> <a :href="m.url" target="_blank">{{ m.url }}</a></p>
+          <p v-if="m.limiar_modo">
+            <strong>Limiar:</strong>
+            {{ m.limiar_modo === 'absoluto' ? `R$ ${formatPrice(m.limiar_valor)}` : `${m.limiar_valor}%` }}
+            ({{ m.limiar_modo }})
+          </p>
+          <p v-else><em>Sem limiar</em></p>
+          <button type="button" class="btn btn-danger" @click="archiveMonitor(m.id)">Arquivar</button>
+        </div>
       </div>
 
-      <h3>{{ monitor ? 'Trocar URL (arquiva atual)' : 'Configurar Monitor' }}</h3>
+      <h3>Adicionar URL de rastreio</h3>
       <form @submit.prevent="submitMonitor" class="form">
         <div class="form-row">
           <label>URL para monitorar</label>
@@ -145,12 +148,18 @@
           <label>Valor do Limiar</label>
           <input v-model.number="monitorForm.limiar_valor" type="number" step="0.01" required />
         </div>
-        <button type="submit" class="btn">{{ monitor ? 'Trocar URL' : 'Criar Monitor' }}</button>
+        <button type="submit" class="btn">Adicionar monitor</button>
       </form>
 
-      <div v-if="monitor">
-        <h3>Atualizar Limiar</h3>
+      <div v-if="activeMonitors.length">
+        <h3>Atualizar limiar de um monitor</h3>
         <form @submit.prevent="updateLimiar" class="form">
+          <div class="form-row">
+            <label>Monitor</label>
+            <select v-model.number="limiarForm.monitor_id">
+              <option v-for="m in activeMonitors" :key="m.id" :value="m.id">{{ m.url }}</option>
+            </select>
+          </div>
           <div class="form-row">
             <label>Modo</label>
             <select v-model="limiarForm.limiar_modo">
@@ -197,6 +206,7 @@ export default {
       deltaCompra: null,
       deltaRastreio: null,
       monitor: null,
+      activeMonitors: [],
       monitorHistory: [],
       compraForm: { preco: null, quantidade: null, loja: '', notas: '' },
       monitorForm: { url: '', css_selector: '', regex_pattern: '', limiar_modo: null, limiar_valor: null },
@@ -235,11 +245,22 @@ export default {
     },
     async loadMonitor() {
       const id = this.sku.id
-      this.monitor = await api.getMonitor(id)
+      this.monitor = await api.getMonitor(id).catch(() => null)
       this.monitorHistory = await api.listMonitorHistory(id).catch(() => [])
-      if (this.monitor) {
-        this.limiarForm.limiar_modo = this.monitor.limiar_modo
-        this.limiarForm.limiar_valor = this.monitor.limiar_valor
+      this.activeMonitors = (this.monitorHistory || []).filter(m => m.ativo)
+      if (this.activeMonitors.length) {
+        const m = this.activeMonitors[0]
+        this.limiarForm.monitor_id = m.id
+        this.limiarForm.limiar_modo = m.limiar_modo
+        this.limiarForm.limiar_valor = m.limiar_valor
+      }
+    },
+    async archiveMonitor(monitorId) {
+      try {
+        await api.archiveMonitor(this.sku.id, monitorId)
+        await this.loadMonitor()
+      } catch (e) {
+        this.error = e.message
       }
     },
     async submitCompra() {
@@ -577,5 +598,11 @@ export default {
 
 .error {
   color: #e74c3c;
+}
+.monitor-card {
+  border: 1px solid #eee;
+  border-radius: 8px;
+  padding: 0.75rem;
+  margin-bottom: 0.75rem;
 }
 </style>
