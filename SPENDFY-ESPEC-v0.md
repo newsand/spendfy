@@ -3,7 +3,7 @@
 **Repo:** https://github.com/newsand/spendfy  
 **Status:** v0 atacável (patches pós-ataque Moriaty/Socrates)  
 **Data:** 2026-09-06  
-**Rev:** 0.2
+**Rev:** 0.3
 
 ---
 
@@ -160,7 +160,7 @@ Para `fonte=rastreio`, “anterior” restringe-se ainda às observações cuja 
 | Peça | Escolha |
 |------|---------|
 | API | **Go** (HTTP), domínio SKU/observação com testes nos invariantes |
-| DB | **SQLite** na v0 (single-user); Postgres se/quando hospedar multi-processo exigir |
+| DB | **PostgreSQL** (obrigatório). Sem PostgreSQL em produção/v0; sem MongoDB |
 | Front | **Vue 3** fino (form + histórico + limiar + URL) |
 | Coletor | processo/cron **separado** (Go ou script) que só `POST` na API |
 | Telegram | Bot API no **worker**, não no front |
