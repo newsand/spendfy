@@ -134,3 +134,7 @@ func (s *Service) GetLastObservacaoForRastreio(ctx context.Context, skuID int64,
 func (s *Service) LogColeta(ctx context.Context, monitorID int64, success bool, obsID *int64, errMsg *string) error {
 	return s.repo.LogColeta(ctx, monitorID, success, obsID, errMsg)
 }
+
+func (s *Service) ListTrackedSKUs(ctx context.Context) ([]domain.TrackedSKU, error) {
+	return s.repo.ListTrackedSKUs(ctx)
+}

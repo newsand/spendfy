@@ -98,3 +98,17 @@ var (
 	ErrInvalidLimiarModo      = errors.New("invalid limiar_modo")
 	ErrLimiarModoRequired     = errors.New("limiar_modo and limiar_valor must both be set or both be null")
 )
+
+type TrackedSKU struct {
+	SKU             SKU               `json:"sku"`
+	LastCompra      *decimal.Decimal  `json:"last_compra,omitempty"`
+	LastCompraData  *time.Time        `json:"last_compra_data,omitempty"`
+	HasMonitor      bool              `json:"has_monitor"`
+	SeriesCompra    []PricePoint      `json:"series_compra"`
+	SeriesRastreio  []PricePoint      `json:"series_rastreio"`
+}
+
+type PricePoint struct {
+	Data  time.Time       `json:"data"`
+	Preco decimal.Decimal `json:"preco"`
+}

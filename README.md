@@ -46,6 +46,20 @@ docker-compose up -d
 # Frontend: http://localhost:5173
 ```
 
+## Dashboard de Produtos Rastreados
+
+A tela inicial do frontend (`/`) exibe o **Dashboard de Produtos Rastreados**:
+
+- Lista SKUs que possuem observações de preço ou monitor ativo
+- Cada card mostra:
+  - Nome, marca e variante do SKU
+  - Badge de "Monitor ativo" se houver URL configurada
+  - **Último valor pago** (fonte=compra) ou "—" se não houver compra registrada
+  - **Gráfico de preço ao longo do tempo** com séries separadas para compra (verde) e rastreio (azul)
+- Clique no card para ver detalhes do SKU
+
+A navegação superior permite alternar entre Dashboard e lista de SKUs.
+
 ## Desenvolvimento Local
 
 ### Pré-requisitos
@@ -142,6 +156,10 @@ go test ./...
 - `PUT /api/v1/skus/:id/monitor/limiar` — Atualizar limiar de alerta
 - `GET /api/v1/skus/:id/monitor/history` — Histórico de URLs
 - `GET /api/v1/monitors/active` — Listar todos os monitors ativos (usado pelo worker)
+
+### Dashboard
+
+- `GET /api/v1/dashboard/tracked-skus` — Lista SKUs com observações ou monitor ativo, incluindo último preço de compra e séries de preço (compra e rastreio separadas)
 
 ## Configuração do Telegram (D2)
 
