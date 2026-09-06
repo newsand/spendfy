@@ -10,11 +10,10 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"regexp"
 	"strings"
 	"time"
 
-	"github.com/PuerkitoBio/goquery"
+	"github.com/newsand/spendfy/worker/internal/extractor"
 	"github.com/shopspring/decimal"
 )
 
@@ -212,85 +211,18 @@ func (c *Collector) scrapePrice(ctx context.Context, monitor MonitorURL) (decima
 		return decimal.Zero, fmt.Errorf("read body: %w", err)
 	}
 
+	ext := extractor.New()
+	html := string(body)
+
 	if monitor.CSSSelector != nil && *monitor.CSSSelector != "" {
-		return c.extractPriceCSS(string(body), *monitor.CSSSelector)
+		return ext.ExtractCSS(html, *monitor.CSSSelector)
 	}
 
 	if monitor.RegexPattern != nil && *monitor.RegexPattern != "" {
-		return c.extractPriceRegex(string(body), *monitor.RegexPattern)
+		return ext.ExtractRegex(html, *monitor.RegexPattern)
 	}
 
-	return c.extractPriceDefault(string(body))
-}
-
-func (c *Collector) extractPriceCSS(html, selector string) (decimal.Decimal, error) {
-	doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
-	if err != nil {
-		return decimal.Zero, fmt.Errorf("parse html: %w", err)
-	}
-
-	text := doc.Find(selector).First().Text()
-	if text == "" {
-		return decimal.Zero, fmt.Errorf("selector %q matched nothing", selector)
-	}
-
-	return parsePrice(text)
-}
-
-func (c *Collector) extractPriceRegex(html, pattern string) (decimal.Decimal, error) {
-	re, err := regexp.Compile(pattern)
-	if err != nil {
-		return decimal.Zero, fmt.Errorf("invalid regex: %w", err)
-	}
-
-	matches := re.FindStringSubmatch(html)
-	if len(matches) < 2 {
-		return decimal.Zero, fmt.Errorf("regex matched nothing")
-	}
-
-	return parsePrice(matches[1])
-}
-
-func (c *Collector) extractPriceDefault(html string) (decimal.Decimal, error) {
-	patterns := []string{
-		`R\$\s*([\d.,]+)`,
-		`"price":\s*"?([\d.,]+)"?`,
-		`data-price="([\d.,]+)"`,
-		`class="[^"]*price[^"]*"[^>]*>([\d.,\s]+)`,
-	}
-
-	for _, p := range patterns {
-		re := regexp.MustCompile(p)
-		matches := re.FindStringSubmatch(html)
-		if len(matches) >= 2 {
-			price, err := parsePrice(matches[1])
-			if err == nil && price.GreaterThan(decimal.Zero) {
-				return price, nil
-			}
-		}
-	}
-
-	return decimal.Zero, fmt.Errorf("no price found in page")
-}
-
-func parsePrice(s string) (decimal.Decimal, error) {
-	s = strings.TrimSpace(s)
-	s = strings.ReplaceAll(s, " ", "")
-	s = strings.ReplaceAll(s, "R$", "")
-	s = strings.ReplaceAll(s, "\u00a0", "")
-
-	if strings.Contains(s, ",") && strings.Contains(s, ".") {
-		if strings.LastIndex(s, ",") > strings.LastIndex(s, ".") {
-			s = strings.ReplaceAll(s, ".", "")
-			s = strings.ReplaceAll(s, ",", ".")
-		} else {
-			s = strings.ReplaceAll(s, ",", "")
-		}
-	} else if strings.Contains(s, ",") {
-		s = strings.ReplaceAll(s, ",", ".")
-	}
-
-	return decimal.NewFromString(s)
+	return ext.ExtractDefault(html)
 }
 
 func (c *Collector) postObservacao(ctx context.Context, monitor MonitorURL, sku *SKU, price decimal.Decimal) (*PrecoObservado, error) {
