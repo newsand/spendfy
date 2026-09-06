@@ -135,7 +135,7 @@ Comportamento v0:
 - Headless browser (Playwright, Puppeteer)
 - Proxy rotativo
 
-<!-- TODO: link GitHub issue quando criado (ex: "Araújo 403 - WAF bypass") -->
+Tracked in [#2](https://github.com/newsand/spendfy/issues/2).
 
 Este PR não implementa anti-bot. O collector falha graciosamente.
 
