@@ -120,6 +120,7 @@ Para `fonte=rastreio`, “anterior” restringe-se às observações com a **mes
 - OCR / upload de notinha fiscal
 - Catálogo multi-canal de notificação
 - Matching automático SKU entre lojas (usuário amarra a `chave_identidade`)
+- Ranking / “onde está mais barato agora” entre lojas do mesmo SKU
 - Agente IA gravando preço
 - Gravar total de kit/combo como se fosse preço unitário
 
@@ -146,13 +147,14 @@ Para `fonte=rastreio`, “anterior” restringe-se às observações com a **mes
 
 1. Dado um SKU com ≥2 observações `compra`, Δ usa só `preco` unitário vs a `compra` imediatamente anterior (mesmo `sku_id`, mesma `fonte`).
 2. `quantidade` não altera Δ nem limiar.
-3. SKU com limiar configurado (`limiar_modo` + valor): coleta `rastreio` na URL ativa que satisfaz **esse** modo dispara **uma** mensagem Telegram; sem limiar → não alerta. Nunca avalia absoluto e % ao mesmo tempo.
+3. **Limiar é por monitor (URL), não por SKU.** Monitor com `limiar_modo`+valor: coleta `rastreio` **nessa URL** que satisfaz o modo dispara **uma** mensagem Telegram **referente àquela URL**; monitor sem limiar → não alerta. Nunca avalia absoluto e % ao mesmo tempo no mesmo monitor. Dois monitores no mesmo SKU podem alertar independentemente.
 4. Falha de scrape não cria preço observado.
 5. Comparar/alertar misturando `compra` e `rastreio`, ou misturando URLs de rastreio, é rejeitado / não oferecido.
 6. Δ/alerta/chart de `rastreio` são sempre por URL; misturar URLs é rejeitado.
 7. N monitores ativos no mesmo SKU são permitidos; arquivar um não afeta os outros.
 8. Não existe OCR, segundo canal de notificação, ou gravação de preço por agente IA.
 9. Observação de kit/combo total não entra na série unitária do SKU.
+10. A v0 **não** responde “onde está mais barato agora” (mínimo / ranking entre lojas do mesmo SKU). Só perguntas **por URL** (ex.: “o Vasenol na Araújo baixou?”). Comparação cross-loja = fora de escopo até nova decisão.
 
 ---
 
