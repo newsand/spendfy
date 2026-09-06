@@ -1,8 +1,9 @@
 # Spendfy — especificação v0
 
 **Repo:** https://github.com/newsand/spendfy  
-**Status:** v0 atacável (job fechado + unidade canônica + fora de escopo sem “etc”)  
-**Data:** 2026-09-06
+**Status:** v0 atacável (patches pós-ataque Moriaty/Socrates)  
+**Data:** 2026-09-06  
+**Rev:** 0.2
 
 ---
 
@@ -46,17 +47,19 @@ Registro mínimo de **uma observação de preço** ligada a um SKU.
 |-------|-------------|------|
 | `id` | sim | |
 | `sku_id` | sim | FK para SKU |
-| `preco` | sim | valor monetário (BRL na v0) |
+| `preco` | sim | **sempre preço unitário** na `unidade` (BRL). Nunca total da linha. |
 | `moeda` | sim | fixo `BRL` na v0 |
-| `quantidade` | sim | quantidade na unidade da observação (default 1) |
-| `unidade` | sim | deve ser comparável à `unidade_padrao` do SKU (mesma unidade ou conversão explícita documentada; na v0: **mesma unidade**, sem conversão) |
+| `quantidade` | não | só contexto de compra (“comprei 2”); **não entra** no Δ nem no limiar |
+| `unidade` | sim | na v0: **obrigatoriamente igual** a `unidade_padrao` do SKU (sem conversão) |
 | `loja` | sim | nome ou identificador da loja/site |
 | `data` | sim | data/hora da observação (UTC armazenado; exibição America/Sao_Paulo) |
 | `fonte` | sim | `compra` \| `rastreio` — ver §2.4 |
-| `url` | se `fonte=rastreio` | URL monitorada |
+| `url` | se `fonte=rastreio` | URL da qual veio esta observação |
 | `notas` | não | texto livre |
 
-**Promoção:** fora da v0 como campo estruturado. Se o usuário quiser registrar preço promocional via form, entra como preço observado normal; não há flag `promocao`.
+**Regra fechada (`preco` × `quantidade`):** a série e os alertas usam **somente** `preco` unitário. Se o usuário pagou R$10 por 2 un, o form grava `preco=5`, `unidade=un`, `quantidade=2` (opcional). Gravar `preco=10` com `quantidade=2` como se fosse total é **inválido**.
+
+**Promoção:** fora da v0 como campo estruturado.
 
 ### 2.3 Identidade do SKU (regra fechada)
 
@@ -64,9 +67,9 @@ Dois registros são o **mesmo SKU** só se compartilham a mesma `chave_identidad
 
 Na v0, `chave_identidade` é definida **pelo usuário no cadastro** (string estável). Sugestão de preenchimento (não automática):
 - compra recorrente: `marca + nome + tamanho` digitados de forma consistente
-- rastreio: URL canônica do produto no site (uma URL = um alvo de scrape; o SKU aponta para essa URL no monitor)
+- rastreio: amarra ao monitor ativo (§3.2); identidade do SKU **não** é inferida da URL automaticamente além do vínculo explícito
 
-**Proibido na v0:** inferir “é o mesmo produto” por similaridade de nome entre Araújo e Raia, ou entre linha de notinha e catálogo.
+**Proibido na v0:** inferir “é o mesmo produto” por similaridade de nome entre lojas, ou entre linha de notinha e catálogo.
 
 ### 2.4 Fonte e comparação (“última observação”)
 
@@ -74,36 +77,49 @@ Na v0, `chave_identidade` é definida **pelo usuário no cadastro** (string est�
 
 | Valor | Significado | Origem na v0 |
 |-------|-------------|--------------|
-| `compra` | preço que **você pagou** | form manual |
-| `rastreio` | preço que o **site mostrou** | scraper de 1 URL |
+| `compra` | preço unitário que **você pagou** | form → API |
+| `rastreio` | preço unitário que o **site mostrou** | coletor → API |
 
 **Regra de comparação:** Δ% / Δ$ entre observação atual e a **anterior com o mesmo `sku_id` e a mesma `fonte`**.  
 Misturar `compra` com `rastreio` na mesma série é **inválido**. A UI pode mostrar as duas séries lado a lado; não calcula “última vez” cruzando tipos.
 
+Para `fonte=rastreio`, “anterior” restringe-se ainda às observações cuja `url` é a **URL ativa atual** do SKU (ver §3.2). Observações de URL arquivada ficam no histórico, fora do Δ e do alerta.
+
 ---
 
-## 3. Superfícies da v0 (duas entradas magras)
+## 3. Superfícies da v0
+
+### 3.0 Arquitetura de ingestão (fechada)
+
+- **API HTTP** é a única forma de persistir preço observado (form e coletor).
+- **Coletor** = processo/cron separado que, se extrair um número com sucesso, faz `POST` na API. Scraper determinístico (ou script) é o plug da v0.
+- **Agente IA como runtime de preço:** fora. Não grava `preco` alucinado. IA, se existir depois, no máximo ajuda a montar seletor (D3) — nunca a série.
 
 ### 3.1 Form manual (`fonte=compra`)
 
 - Criar/editar SKU
-- Registrar preço observado (loja, data, unidade, preço) amarrado a um SKU
+- Registrar preço observado **unitário** (loja, data, unidade, preço) amarrado a um SKU
 - Ver histórico do SKU (série `compra`) e Δ vs última `compra`
 
 ### 3.2 Monitor de 1 URL (`fonte=rastreio`)
 
-- Por SKU: cadastrar **no máximo uma** URL ativa de monitor
-- Job diário: fetch/scrape dessa URL, extrair preço, gravar preço observado `rastreio`
-- Se o scrape falhar: **não** inventar preço; registrar falha de coleta (status/log) e manter última observação válida intacta
-- Limiar de alerta: por SKU, valor absoluto (`preco <= X`) **ou** queda percentual vs última `rastreio` (`queda_pct >= Y`) — pelo menos um dos dois configurado; ambos explícitos na UI/API, sem default mágico de “barato”
-- Notificação: **somente Telegram** (um canal). E-mail e WhatsApp fora.
+- Por SKU: **no máximo uma** URL ativa de monitor
+- Job diário (worker): fetch/scrape da URL ativa → `POST` preço unitário `rastreio` na API
+- Se o scrape falhar: **não** inventar preço; registrar falha de coleta; última observação válida intacta
+- **Troca de URL ativa:** a URL anterior fica **arquivada**. Observações `rastreio` com `url` antiga permanecem no histórico mas **saem** da série usada para Δ e alerta. A próxima coleta inicia série nova sob a URL nova (primeira observação sem Δ até existir a segunda na mesma URL).
+- **Limiar de alerta (um modo só por SKU):** campo `limiar_modo` = `absoluto` \| `percentual` (mutuamente exclusivo) + `limiar_valor`.
+  - `absoluto`: alerta se `preco <= limiar_valor`
+  - `percentual`: alerta se queda % vs última `rastreio` **da URL ativa** ≥ `limiar_valor`
+  - Sem `limiar_modo` configurado → **não** alerta. Sem default mágico de “barato”.
+- Notificação: **somente Telegram** (um canal). E-mail e WhatsApp fora. Envio no **worker**, não no front.
 
 ### 3.3 O que a v0 não promete nestas superfícies
 
 - OCR / upload de notinha fiscal
-- Várias URLs ou vários sites por SKU (ex.: 5 farmácias)
+- Várias URLs ativas ou vários sites por SKU
 - Catálogo multi-canal de notificação
 - Matching automático SKU entre lojas
+- Agente IA gravando preço
 
 ---
 
@@ -111,43 +127,55 @@ Misturar `compra` com `rastreio` na mesma série é **inválido**. A UI pode mos
 
 - OCR / parse de notinha ou cupom fiscal
 - Comparação de cesta / “a compra ficou mais cara”
-- Multi-site por SKU (N farmácias)
+- Multi-site / multi-URL ativa por SKU
 - WhatsApp, e-mail, push, SMS (além do Telegram único)
-- Flag estruturada de promoção / preço de atacado vs varejo
+- Flag estruturada de promoção
 - Conversão automática de unidades (kg↔g, ml↔l)
 - Auth multi-usuário / times / compartilhamento (v0 = single-user)
 - App mobile nativo
 - Pagamentos, orçamento, metas, categorias financeiras
 - Inflação agregada / índices públicos
 - Matching fuzzy / ML de identidade de produto
+- Agente IA como fonte de preço observado
+- Scraper embutido na request web do monólito front
 
 ---
 
 ## 5. Critérios de aceite (v0 atacável)
 
-1. Dado um SKU com ≥2 observações `compra`, a UI/API responde Δ vs a observação `compra` imediatamente anterior (mesmo `sku_id`, mesma `fonte`).
-2. Dado um SKU com URL de monitor e limiar configurado, uma coleta `rastreio` abaixo do limiar dispara **uma** mensagem Telegram; sem limiar configurado, **não** alerta.
-3. Uma falha de scrape não cria preço observado falso.
-4. Tentativa de comparar ou alertar misturando `compra` e `rastreio` é rejeitada ou não oferecida.
-5. Não existe endpoint/tela de OCR, segundo canal de notificação, ou segunda URL ativa por SKU.
+1. Dado um SKU com ≥2 observações `compra`, Δ usa só `preco` unitário vs a `compra` imediatamente anterior (mesmo `sku_id`, mesma `fonte`).
+2. `quantidade` não altera Δ nem limiar.
+3. SKU com limiar configurado (`limiar_modo` + valor): coleta `rastreio` na URL ativa que satisfaz **esse** modo dispara **uma** mensagem Telegram; sem limiar → não alerta. Nunca avalia absoluto e % ao mesmo tempo.
+4. Falha de scrape não cria preço observado.
+5. Comparar/alertar misturando `compra` e `rastreio`, ou misturando URLs de rastreio, é rejeitado / não oferecido.
+6. Trocar URL ativa arquiva a anterior; Δ/alerta de `rastreio` só olham a URL ativa.
+7. Não existe endpoint/tela de OCR, segundo canal de notificação, segunda URL ativa, ou gravação de preço por agente IA.
 
 ---
 
-## 6. Decisões abertas (não descrever tela/regra até fechar)
+## 6. Decisões
 
-Estas ficam **nomeadas** e **sem desenho** na v0 até ADR:
+### D1 — Stack (fechada)
 
-- D1 — Stack (linguagem, DB, hosting do job diário)
-- D2 — Como o bot Telegram associa chat_id ao usuário único
-- D3 — Seletor CSS / estratégia de extração de preço por URL (por site vs genérico)
+| Peça | Escolha |
+|------|---------|
+| API | **Go** (HTTP), domínio SKU/observação com testes nos invariantes |
+| DB | **SQLite** na v0 (single-user); Postgres se/quando hospedar multi-processo exigir |
+| Front | **Vue 3** fino (form + histórico + limiar + URL) |
+| Coletor | processo/cron **separado** (Go ou script) que só `POST` na API |
+| Telegram | Bot API no **worker**, não no front |
+
+Rejeitado na v0: Next full-stack como núcleo, scraper dentro da request web, agente IA como runtime de preço.
+
+### Ainda abertas (sem desenhar tela/regra até fechar)
+
+- D2 — Como o bot Telegram associa `chat_id` ao usuário único
+- D3 — Estratégia de extração de preço por URL (seletor por site vs genérico)
 - D4 — Retenção de histórico (ilimitado vs janela)
-
-Qualquer tela ou regra sobre D1–D4 antes de fechar a decisão é **inválida** nesta spec.
 
 ---
 
 ## 7. Próximo passo
 
-1. @Socrates — julgar se o job + unidade + fora batem com “a coisa certa”.
-2. @Moriaty — atacar buracos exploráveis nesta doc.
-3. Após passe: implementação da fatia v0 (form + 1 monitor + Telegram + limiar).
+1. @Socrates / @Moriaty — confirmar se os patches (unitário, limiar único, troca de URL, D1 Go) fecham a v0.
+2. Após ok: implementação (API Go + Vue 3 + worker + Telegram).
