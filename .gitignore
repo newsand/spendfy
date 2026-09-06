@@ -1,5 +1,11 @@
-# Binaries
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
 bin/
+
+# Binaries
 *.exe
 *.exe~
 *.dll
@@ -10,11 +16,6 @@ bin/
 *.test
 *.out
 go.work
-
-# Node
-node_modules/
-dist/
-.cache/
 
 # IDE
 .idea/
@@ -27,12 +28,12 @@ dist/
 .DS_Store
 Thumbs.db
 
-# Local env
+# Environment
 .env
 .env.local
 .env.*.local
 
-# Postgres data
+# Postgres data (docker volume)
 postgres_data/
 
 # Logs
