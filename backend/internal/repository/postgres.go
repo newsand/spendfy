@@ -504,11 +504,7 @@ func (r *PostgresRepository) ListTrackedSKUs(ctx context.Context) ([]domain.Trac
 			return nil, err
 		}
 
-		rastreioRows, err := r.pool.Query(ctx, `
-			SELECT data, preco FROM precos_observados
-			WHERE sku_id = $1 AND fonte = 'rastreio'
-			ORDER BY data ASC
-		`, skuID)
+		rastreioRows, err := r.pool.Query(ctx, listRastreioSeriesForChartSQL, skuID)
 		if err != nil {
 			return nil, fmt.Errorf("list rastreio series for sku %d: %w", skuID, err)
 		}

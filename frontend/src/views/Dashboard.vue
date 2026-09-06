@@ -7,7 +7,7 @@
     <div v-else-if="trackedSkus.length === 0" class="empty">
       <p>Nenhum produto rastreado.</p>
       <p>Adicione observações ou monitores aos SKUs para vê-los aqui.</p>
-      <router-link to="/" class="btn">Ver SKUs</router-link>
+      <router-link to="/skus" class="btn">Ver SKUs</router-link>
     </div>
     <div v-else class="cards">
       <div v-for="item in trackedSkus" :key="item.sku.id" class="card">
@@ -135,29 +135,28 @@ export default {
     getChartData(item) {
       const compra = item.series_compra || []
       const rastreio = item.series_rastreio || []
-      
-      const allDates = new Set()
-      compra.forEach(p => allDates.add(this.formatDateShort(p.data)))
-      rastreio.forEach(p => allDates.add(this.formatDateShort(p.data)))
-      
-      const sortedDates = Array.from(allDates).sort((a, b) => {
-        const da = this.parseDate(a)
-        const db = this.parseDate(b)
-        return da - db
-      })
-      
+
+      const toMs = (val) => new Date(val).getTime()
+      const labelFor = (val) =>
+        new Date(val).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' })
+
+      const axisMap = new Map()
+      for (const p of [...compra, ...rastreio]) {
+        const t = toMs(p.data)
+        if (!axisMap.has(t)) axisMap.set(t, labelFor(p.data))
+      }
+      const axis = [...axisMap.entries()].sort((a, b) => a[0] - b[0]).map(([t, label]) => ({ t, label }))
+
       const compraMap = new Map()
-      compra.forEach(p => compraMap.set(this.formatDateShort(p.data), parseFloat(p.preco)))
-      
+      compra.forEach(p => compraMap.set(toMs(p.data), parseFloat(p.preco)))
       const rastreioMap = new Map()
-      rastreio.forEach(p => rastreioMap.set(this.formatDateShort(p.data), parseFloat(p.preco)))
-      
+      rastreio.forEach(p => rastreioMap.set(toMs(p.data), parseFloat(p.preco)))
+
       const datasets = []
-      
       if (compra.length > 0) {
         datasets.push({
           label: 'Compra',
-          data: sortedDates.map(d => compraMap.get(d) ?? null),
+          data: axis.map(a => (compraMap.has(a.t) ? compraMap.get(a.t) : null)),
           borderColor: '#27ae60',
           backgroundColor: 'rgba(39, 174, 96, 0.1)',
           tension: 0.3,
@@ -166,11 +165,10 @@ export default {
           spanGaps: true
         })
       }
-      
       if (rastreio.length > 0) {
         datasets.push({
           label: 'Rastreio',
-          data: sortedDates.map(d => rastreioMap.get(d) ?? null),
+          data: axis.map(a => (rastreioMap.has(a.t) ? rastreioMap.get(a.t) : null)),
           borderColor: '#3498db',
           backgroundColor: 'rgba(52, 152, 219, 0.1)',
           tension: 0.3,
@@ -179,19 +177,8 @@ export default {
           spanGaps: true
         })
       }
-      
-      return {
-        labels: sortedDates,
-        datasets
-      }
-    },
-    formatDateShort(val) {
-      const d = new Date(val)
-      return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
-    },
-    parseDate(str) {
-      const [day, month] = str.split('/')
-      return new Date(2024, parseInt(month) - 1, parseInt(day))
+
+      return { labels: axis.map(a => a.label), datasets }
     }
   }
 }
