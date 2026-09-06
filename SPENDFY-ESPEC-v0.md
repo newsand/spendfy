@@ -160,7 +160,7 @@ Para `fonte=rastreio`, “anterior” restringe-se ainda às observações cuja 
 | Peça | Escolha |
 |------|---------|
 | API | **Go** (HTTP), domínio SKU/observação com testes nos invariantes |
-| DB | **PostgreSQL** (obrigatório). Sem PostgreSQL em produção/v0; sem MongoDB |
+| DB | **PostgreSQL** (obrigatório). Sem SQLite na v0; sem MongoDB |
 | Front | **Vue 3** fino (form + histórico + limiar + URL) |
 | Coletor | processo/cron **separado** (Go ou script) que só `POST` na API |
 | Telegram | Bot API no **worker**, não no front |
