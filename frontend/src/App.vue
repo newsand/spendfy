@@ -2,7 +2,11 @@
   <div class="app">
     <header>
       <nav>
-        <router-link to="/" class="brand">Spendfy</router-link>
+        <div class="nav-left">
+          <router-link to="/" class="brand">Spendfy</router-link>
+          <router-link to="/" class="nav-link">Dashboard</router-link>
+          <router-link to="/skus" class="nav-link">SKUs</router-link>
+        </div>
         <router-link to="/skus/new" class="btn-new">+ Novo SKU</router-link>
       </nav>
     </header>
@@ -44,11 +48,36 @@ nav {
   align-items: center;
 }
 
+.nav-left {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
 .brand {
   color: white;
   text-decoration: none;
   font-size: 1.5rem;
   font-weight: bold;
+}
+
+.nav-link {
+  color: rgba(255,255,255,0.8);
+  text-decoration: none;
+  font-size: 0.95rem;
+  padding: 0.25rem 0;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.nav-link:hover {
+  color: white;
+}
+
+.nav-link.router-link-active,
+.nav-link.router-link-exact-active {
+  color: white;
+  border-bottom-color: #27ae60;
 }
 
 .btn-new {

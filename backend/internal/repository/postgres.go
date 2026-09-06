@@ -431,4 +431,98 @@ func containsAt(s, substr string) bool {
 	return false
 }
 
+func (r *PostgresRepository) ListTrackedSKUs(ctx context.Context) ([]domain.TrackedSKU, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT DISTINCT s.id, s.nome, s.marca, s.tamanho_ou_variante, s.unidade_padrao, s.chave_identidade, s.created_at, s.updated_at
+		FROM skus s
+		LEFT JOIN precos_observados po ON s.id = po.sku_id
+		LEFT JOIN monitor_urls mu ON s.id = mu.sku_id AND mu.ativo = TRUE
+		WHERE po.id IS NOT NULL OR mu.id IS NOT NULL
+		ORDER BY s.nome
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("list tracked skus: %w", err)
+	}
+	defer rows.Close()
+
+	var result []domain.TrackedSKU
+	for rows.Next() {
+		var sku domain.SKU
+		if err := rows.Scan(&sku.ID, &sku.Nome, &sku.Marca, &sku.TamanhoVariante, &sku.UnidadePadrao, &sku.ChaveIdentidade, &sku.CreatedAt, &sku.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("scan sku: %w", err)
+		}
+		result = append(result, domain.TrackedSKU{SKU: sku})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	for i := range result {
+		skuID := result[i].SKU.ID
+
+		var lastCompra *domain.PrecoObservado
+		var lastCompraPrice decimal.Decimal
+		var lastCompraData time.Time
+		err := r.pool.QueryRow(ctx, `
+			SELECT preco, data FROM precos_observados
+			WHERE sku_id = $1 AND fonte = 'compra'
+			ORDER BY data DESC LIMIT 1
+		`, skuID).Scan(&lastCompraPrice, &lastCompraData)
+		if err == nil {
+			result[i].LastCompra = &lastCompraPrice
+			result[i].LastCompraData = &lastCompraData
+		} else if !errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("get last compra for sku %d: %w", skuID, err)
+		}
+		_ = lastCompra
+
+		var hasMonitor bool
+		err = r.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM monitor_urls WHERE sku_id = $1 AND ativo = TRUE)`, skuID).Scan(&hasMonitor)
+		if err != nil {
+			return nil, fmt.Errorf("check monitor for sku %d: %w", skuID, err)
+		}
+		result[i].HasMonitor = hasMonitor
+
+		compraRows, err := r.pool.Query(ctx, `
+			SELECT data, preco FROM precos_observados
+			WHERE sku_id = $1 AND fonte = 'compra'
+			ORDER BY data ASC
+		`, skuID)
+		if err != nil {
+			return nil, fmt.Errorf("list compra series for sku %d: %w", skuID, err)
+		}
+		for compraRows.Next() {
+			var pt domain.PricePoint
+			if err := compraRows.Scan(&pt.Data, &pt.Preco); err != nil {
+				compraRows.Close()
+				return nil, fmt.Errorf("scan compra point: %w", err)
+			}
+			result[i].SeriesCompra = append(result[i].SeriesCompra, pt)
+		}
+		compraRows.Close()
+		if err := compraRows.Err(); err != nil {
+			return nil, err
+		}
+
+		rastreioRows, err := r.pool.Query(ctx, listRastreioSeriesForChartSQL, skuID)
+		if err != nil {
+			return nil, fmt.Errorf("list rastreio series for sku %d: %w", skuID, err)
+		}
+		for rastreioRows.Next() {
+			var pt domain.PricePoint
+			if err := rastreioRows.Scan(&pt.Data, &pt.Preco); err != nil {
+				rastreioRows.Close()
+				return nil, fmt.Errorf("scan rastreio point: %w", err)
+			}
+			result[i].SeriesRastreio = append(result[i].SeriesRastreio, pt)
+		}
+		rastreioRows.Close()
+		if err := rastreioRows.Err(); err != nil {
+			return nil, err
+		}
+	}
+
+	return result, nil
+}
+
 var _ sql.Scanner = (*decimal.Decimal)(nil)

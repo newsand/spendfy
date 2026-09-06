@@ -85,5 +85,9 @@ export const api = {
 
   listMonitorHistory(skuId) {
     return request(`/skus/${skuId}/monitor/history`)
+  },
+
+  listTrackedSKUs() {
+    return request('/dashboard/tracked-skus')
   }
 }

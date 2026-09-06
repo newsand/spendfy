@@ -43,6 +43,10 @@ func (h *Handlers) RegisterRoutes(r chi.Router) {
 		})
 
 		r.Get("/monitors/active", h.ListActiveMonitors)
+
+		r.Route("/dashboard", func(r chi.Router) {
+			r.Get("/tracked-skus", h.ListTrackedSKUs)
+		})
 	})
 }
 
@@ -345,6 +349,15 @@ func (h *Handlers) ListActiveMonitors(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, monitors)
+}
+
+func (h *Handlers) ListTrackedSKUs(w http.ResponseWriter, r *http.Request) {
+	tracked, err := h.svc.ListTrackedSKUs(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, tracked)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
