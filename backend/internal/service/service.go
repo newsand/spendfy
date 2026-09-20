@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strconv"
 
 	"github.com/newsand/spendfy/backend/internal/domain"
 	"github.com/newsand/spendfy/backend/internal/repository"
@@ -66,14 +67,19 @@ func (s *Service) ListObservacoes(ctx context.Context, skuID int64, fonte *domai
 	return s.repo.ListObservacoesBySKU(ctx, skuID, fonte)
 }
 
-func (s *Service) GetDelta(ctx context.Context, skuID int64, fonte domain.Fonte) (*domain.DeltaResult, error) {
+func (s *Service) GetDelta(ctx context.Context, skuID int64, fonte domain.Fonte, urlParam *string, monitorIDParam *int64) (*domain.DeltaResult, error) {
 	var url *string
 	if fonte == domain.FonteRastreio {
-		monitor, err := s.repo.GetActiveMonitor(ctx, skuID)
-		if err != nil {
-			return nil, err
-		}
-		if monitor != nil {
+		if urlParam != nil {
+			url = urlParam
+		} else if monitorIDParam != nil {
+			monitor, err := s.repo.GetMonitorByID(ctx, *monitorIDParam)
+			if err != nil {
+				return nil, err
+			}
+			if monitor == nil {
+				return nil, domain.ErrMonitorNotFound
+			}
 			url = &monitor.URL
 		}
 	}
@@ -110,6 +116,38 @@ func (s *Service) SetActiveMonitor(ctx context.Context, req *domain.SetMonitorRe
 
 func (s *Service) GetActiveMonitor(ctx context.Context, skuID int64) (*domain.MonitorURL, error) {
 	return s.repo.GetActiveMonitor(ctx, skuID)
+}
+
+func (s *Service) ListActiveMonitorsBySKU(ctx context.Context, skuID int64) ([]domain.MonitorURL, error) {
+	return s.repo.ListMonitorsBySKU(ctx, skuID, true)
+}
+
+func (s *Service) GetActiveMonitorByURLOrID(ctx context.Context, skuID int64, url string, monitorIDStr string) (*domain.MonitorURL, error) {
+	if monitorIDStr != "" {
+		monitorID, err := strconv.ParseInt(monitorIDStr, 10, 64)
+		if err != nil {
+			return nil, domain.ErrMonitorNotFound
+		}
+		monitor, err := s.repo.GetMonitorByID(ctx, monitorID)
+		if err != nil {
+			return nil, err
+		}
+		if monitor == nil || monitor.SKUID != skuID || !monitor.Ativo {
+			return nil, domain.ErrMonitorNotFound
+		}
+		return monitor, nil
+	}
+	if url != "" {
+		monitor, err := s.repo.GetActiveMonitorByURL(ctx, skuID, url)
+		if err != nil {
+			return nil, err
+		}
+		if monitor == nil {
+			return nil, domain.ErrMonitorNotFound
+		}
+		return monitor, nil
+	}
+	return nil, domain.ErrMonitorNotFound
 }
 
 func (s *Service) UpdateMonitorLimiar(ctx context.Context, skuID int64, req *domain.UpdateMonitorLimiarRequest) (*domain.MonitorURL, error) {

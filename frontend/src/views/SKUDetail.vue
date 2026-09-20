@@ -77,12 +77,18 @@
     </div>
 
     <div v-if="activeTab === 'rastreio'" class="tab-content">
-      <div class="delta-card" v-if="deltaRastreio">
-        <h3>Última coleta (URL ativa)</h3>
-        <p class="price">R$ {{ formatPrice(deltaRastreio.current_preco) }}</p>
-        <p v-if="deltaRastreio.has_previous" class="delta" :class="deltaClass(deltaRastreio.delta_absoluto)">
-          {{ formatDelta(deltaRastreio) }}
-        </p>
+      <div v-if="deltaRastreioByURL.length">
+        <div class="delta-card" v-for="d in deltaRastreioByURL" :key="d.url">
+          <h3>{{ hostLabel(d.url) }}</h3>
+          <p class="url-label"><a :href="d.url" target="_blank">{{ d.url }}</a></p>
+          <p class="price">R$ {{ formatPrice(d.delta.current_preco) }}</p>
+          <p v-if="d.delta.has_previous" class="delta" :class="deltaClass(d.delta.delta_absoluto)">
+            {{ formatDelta(d.delta) }}
+          </p>
+        </div>
+      </div>
+      <div v-else-if="activeMonitors.length" class="delta-card empty-state">
+        <p>Nenhuma observação de rastreio ainda.</p>
       </div>
 
       <h3>Histórico de Rastreio</h3>
@@ -204,7 +210,7 @@ export default {
       observacoesCompra: [],
       observacoesRastreio: [],
       deltaCompra: null,
-      deltaRastreio: null,
+      deltaRastreioByURL: [],
       monitor: null,
       activeMonitors: [],
       monitorHistory: [],
@@ -221,10 +227,8 @@ export default {
       const id = this.$route.params.id
       try {
         this.sku = await api.getSKU(id)
-        await Promise.all([
-          this.loadObservacoes(),
-          this.loadMonitor()
-        ])
+        await this.loadMonitor()
+        await this.loadObservacoes()
       } catch (e) {
         this.error = e.message
       } finally {
@@ -241,7 +245,14 @@ export default {
       this.observacoesRastreio = rastreio || []
 
       this.deltaCompra = await api.getDelta(id, 'compra').catch(() => null)
-      this.deltaRastreio = await api.getDelta(id, 'rastreio').catch(() => null)
+
+      this.deltaRastreioByURL = []
+      for (const m of this.activeMonitors) {
+        const delta = await api.getDelta(id, 'rastreio', { url: m.url }).catch(() => null)
+        if (delta) {
+          this.deltaRastreioByURL.push({ url: m.url, delta })
+        }
+      }
     },
     async loadMonitor() {
       const id = this.sku.id
@@ -304,6 +315,7 @@ export default {
     async updateLimiar() {
       try {
         const data = {
+          monitor_id: this.limiarForm.monitor_id,
           limiar_modo: this.limiarForm.limiar_modo,
           limiar_valor: this.limiarForm.limiar_modo ? this.limiarForm.limiar_valor : null
         }
@@ -342,7 +354,15 @@ export default {
       return ''
     },
     isArchivedUrl(url) {
-      return this.monitor && url !== this.monitor.url
+      const activeURLs = this.activeMonitors.map(m => m.url)
+      return activeURLs.length > 0 && !activeURLs.includes(url)
+    },
+    hostLabel(url) {
+      try {
+        return new URL(url).hostname.replace(/^www\./, '')
+      } catch (e) {
+        return url
+      }
     }
   }
 }
@@ -604,5 +624,21 @@ export default {
   border-radius: 8px;
   padding: 0.75rem;
   margin-bottom: 0.75rem;
+}
+
+.url-label {
+  font-size: 0.85rem;
+  color: #666;
+  margin-bottom: 0.5rem;
+}
+
+.url-label a {
+  color: #3498db;
+  word-break: break-all;
+}
+
+.empty-state {
+  color: #666;
+  font-style: italic;
 }
 </style>

@@ -115,6 +115,12 @@ Para `fonte=rastreio`, “anterior” restringe-se às observações com a **mes
 - Chart: **uma série por URL ativa** (nunca uma linha azul misturando lojas).
 - Notificação: **somente Telegram**. Envio no worker.
 
+**Contrato API para Δ/monitor multi-URL:**
+
+- `GET /skus/{id}/observacoes/delta?fonte=rastreio` **exige** `url=` ou `monitor_id=`. Se omitido, retorna **400** com `"url or monitor_id query param required for fonte=rastreio"`. Nunca escolhe silenciosamente um monitor quando há N ativos.
+- `GET /skus/{id}/monitor` sem parâmetros retorna **lista** de todos monitores ativos do SKU (pode ser 0, 1 ou N). Com `url=` ou `monitor_id=` retorna o monitor específico.
+- Frontend exibe Δ **por URL** — cada monitor ativo tem seu próprio card de delta.
+
 ### 3.3 O que a v0 não promete nestas superfícies
 
 - OCR / upload de notinha fiscal

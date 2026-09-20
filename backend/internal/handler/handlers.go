@@ -236,8 +236,36 @@ func (h *Handlers) GetDelta(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.svc.GetDelta(r.Context(), skuID, fonte)
+	var url *string
+	var monitorID *int64
+
+	if fonte == domain.FonteRastreio {
+		urlParam := r.URL.Query().Get("url")
+		monitorIDParam := r.URL.Query().Get("monitor_id")
+
+		if urlParam == "" && monitorIDParam == "" {
+			writeError(w, http.StatusBadRequest, domain.ErrURLOrMonitorIDRequired.Error())
+			return
+		}
+		if urlParam != "" {
+			url = &urlParam
+		}
+		if monitorIDParam != "" {
+			mid, err := strconv.ParseInt(monitorIDParam, 10, 64)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "invalid monitor_id")
+				return
+			}
+			monitorID = &mid
+		}
+	}
+
+	result, err := h.svc.GetDelta(r.Context(), skuID, fonte, url, monitorID)
 	if err != nil {
+		if errors.Is(err, domain.ErrMonitorNotFound) {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -255,16 +283,33 @@ func (h *Handlers) GetMonitor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	monitor, err := h.svc.GetActiveMonitor(r.Context(), skuID)
+	urlParam := r.URL.Query().Get("url")
+	monitorIDParam := r.URL.Query().Get("monitor_id")
+
+	if urlParam != "" || monitorIDParam != "" {
+		monitor, err := h.svc.GetActiveMonitorByURLOrID(r.Context(), skuID, urlParam, monitorIDParam)
+		if err != nil {
+			if errors.Is(err, domain.ErrMonitorNotFound) {
+				writeError(w, http.StatusNotFound, err.Error())
+				return
+			}
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, monitor)
+		return
+	}
+
+	monitors, err := h.svc.ListActiveMonitorsBySKU(r.Context(), skuID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if monitor == nil {
+	if len(monitors) == 0 {
 		writeError(w, http.StatusNotFound, "no active monitor")
 		return
 	}
-	writeJSON(w, http.StatusOK, monitor)
+	writeJSON(w, http.StatusOK, monitors)
 }
 
 func (h *Handlers) SetMonitor(w http.ResponseWriter, r *http.Request) {

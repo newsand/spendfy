@@ -286,6 +286,44 @@ func (r *PostgresRepository) GetActiveMonitor(ctx context.Context, skuID int64) 
 	return &monitor, nil
 }
 
+func (r *PostgresRepository) GetMonitorByID(ctx context.Context, id int64) (*domain.MonitorURL, error) {
+	var monitor domain.MonitorURL
+	err := r.pool.QueryRow(ctx, `
+		SELECT id, sku_id, url, ativo, limiar_modo, limiar_valor, css_selector, regex_pattern, created_at, archived_at
+		FROM monitor_urls
+		WHERE id = $1
+	`, id).Scan(
+		&monitor.ID, &monitor.SKUID, &monitor.URL, &monitor.Ativo, &monitor.LimiarModo, &monitor.LimiarValor,
+		&monitor.CSSSelector, &monitor.RegexPattern, &monitor.CreatedAt, &monitor.ArchivedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get monitor by id: %w", err)
+	}
+	return &monitor, nil
+}
+
+func (r *PostgresRepository) GetActiveMonitorByURL(ctx context.Context, skuID int64, url string) (*domain.MonitorURL, error) {
+	var monitor domain.MonitorURL
+	err := r.pool.QueryRow(ctx, `
+		SELECT id, sku_id, url, ativo, limiar_modo, limiar_valor, css_selector, regex_pattern, created_at, archived_at
+		FROM monitor_urls
+		WHERE sku_id = $1 AND url = $2 AND ativo = TRUE
+	`, skuID, url).Scan(
+		&monitor.ID, &monitor.SKUID, &monitor.URL, &monitor.Ativo, &monitor.LimiarModo, &monitor.LimiarValor,
+		&monitor.CSSSelector, &monitor.RegexPattern, &monitor.CreatedAt, &monitor.ArchivedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get active monitor by url: %w", err)
+	}
+	return &monitor, nil
+}
+
 func (r *PostgresRepository) UpdateMonitorLimiar(ctx context.Context, skuID int64, req *domain.UpdateMonitorLimiarRequest) (*domain.MonitorURL, error) {
 	var monitor domain.MonitorURL
 	var err error
