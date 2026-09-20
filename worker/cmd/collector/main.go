@@ -287,7 +287,7 @@ func (c *Collector) checkAndSendAlert(ctx context.Context, monitor MonitorURL, s
 		}
 
 	case "percentual":
-		delta, err := c.fetchDelta(ctx, monitor.SKUID)
+		delta, err := c.fetchDeltaForMonitor(ctx, monitor)
 		if err != nil {
 			return fmt.Errorf("fetch delta: %w", err)
 		}
@@ -310,9 +310,10 @@ func (c *Collector) checkAndSendAlert(ctx context.Context, monitor MonitorURL, s
 	return nil
 }
 
-func (c *Collector) fetchDelta(ctx context.Context, skuID int64) (*DeltaResult, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET",
-		fmt.Sprintf("%s/api/v1/skus/%d/observacoes/delta?fonte=rastreio", c.cfg.APIURL, skuID), nil)
+func (c *Collector) fetchDeltaForMonitor(ctx context.Context, monitor MonitorURL) (*DeltaResult, error) {
+	deltaURL := fmt.Sprintf("%s/api/v1/skus/%d/observacoes/delta?fonte=rastreio&url=%s",
+		c.cfg.APIURL, monitor.SKUID, url.QueryEscape(monitor.URL))
+	req, err := http.NewRequestWithContext(ctx, "GET", deltaURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -324,6 +325,9 @@ func (c *Collector) fetchDelta(ctx context.Context, skuID int64) (*DeltaResult, 
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNotFound {
+		return nil, nil
+	}
+	if resp.StatusCode == http.StatusBadRequest {
 		return nil, nil
 	}
 	if resp.StatusCode != http.StatusOK {
