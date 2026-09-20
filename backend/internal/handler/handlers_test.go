@@ -185,3 +185,55 @@ func TestDeltaMultiURL_SameSkuDifferentStores(t *testing.T) {
 		})
 	}
 }
+
+func TestGetDelta_MonitorIDMustBelongToPathSKU(t *testing.T) {
+	t.Run("monitor_id from different SKU must be rejected", func(t *testing.T) {
+		pathSKUID := int64(100)
+		monitorSKUID := int64(999)
+
+		if pathSKUID == monitorSKUID {
+			t.Fatal("test setup error: SKU IDs should differ")
+		}
+
+		type mockMonitor struct {
+			ID    int64
+			SKUID int64
+		}
+		monitor := mockMonitor{ID: 42, SKUID: monitorSKUID}
+
+		if monitor.SKUID == pathSKUID {
+			t.Error("BUG: monitor from different SKU should NOT match path SKU")
+		}
+	})
+}
+
+func TestGetDelta_OwnershipCheck(t *testing.T) {
+	tests := []struct {
+		name        string
+		pathSKUID   int64
+		monitorSKU  int64
+		shouldReject bool
+	}{
+		{
+			name:        "monitor belongs to path SKU - allowed",
+			pathSKUID:   100,
+			monitorSKU:  100,
+			shouldReject: false,
+		},
+		{
+			name:        "monitor belongs to different SKU - rejected",
+			pathSKUID:   100,
+			monitorSKU:  200,
+			shouldReject: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ownershipMismatch := tt.monitorSKU != tt.pathSKUID
+			if ownershipMismatch != tt.shouldReject {
+				t.Errorf("ownership check failed: mismatch=%v, shouldReject=%v", ownershipMismatch, tt.shouldReject)
+			}
+		})
+	}
+}

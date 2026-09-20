@@ -77,7 +77,7 @@ func (s *Service) GetDelta(ctx context.Context, skuID int64, fonte domain.Fonte,
 			if err != nil {
 				return nil, err
 			}
-			if monitor == nil {
+			if monitor == nil || monitor.SKUID != skuID {
 				return nil, domain.ErrMonitorNotFound
 			}
 			url = &monitor.URL
@@ -112,10 +112,6 @@ func (s *Service) SetActiveMonitor(ctx context.Context, req *domain.SetMonitorRe
 	}
 
 	return s.repo.SetActiveMonitor(ctx, req)
-}
-
-func (s *Service) GetActiveMonitor(ctx context.Context, skuID int64) (*domain.MonitorURL, error) {
-	return s.repo.GetActiveMonitor(ctx, skuID)
 }
 
 func (s *Service) ListActiveMonitorsBySKU(ctx context.Context, skuID int64) ([]domain.MonitorURL, error) {

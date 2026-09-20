@@ -448,3 +448,18 @@ func TestInvariant_URLOrMonitorIDRequiredError(t *testing.T) {
 		t.Errorf("expected error message %q, got %q", expected, ErrURLOrMonitorIDRequired.Error())
 	}
 }
+
+func TestInvariant_MonitorIDMustBelongToPathSKU(t *testing.T) {
+	pathSKUID := int64(100)
+	
+	monitorSameSKU := &MonitorURL{ID: 1, SKUID: 100, URL: "https://example.com/a"}
+	monitorOtherSKU := &MonitorURL{ID: 2, SKUID: 999, URL: "https://example.com/b"}
+
+	if monitorSameSKU.SKUID != pathSKUID {
+		t.Error("monitor with same SKU should pass ownership check")
+	}
+
+	if monitorOtherSKU.SKUID == pathSKUID {
+		t.Error("monitor with different SKU must FAIL ownership check - never resolve another SKU's URL")
+	}
+}

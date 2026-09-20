@@ -264,28 +264,6 @@ func (r *PostgresRepository) SetActiveMonitor(ctx context.Context, req *domain.S
 	return &monitor, nil
 }
 
-func (r *PostgresRepository) GetActiveMonitor(ctx context.Context, skuID int64) (*domain.MonitorURL, error) {
-	// Backward-compat: return the newest active monitor (multi-URL: prefer ListMonitorsBySKU).
-	var monitor domain.MonitorURL
-	err := r.pool.QueryRow(ctx, `
-		SELECT id, sku_id, url, ativo, limiar_modo, limiar_valor, css_selector, regex_pattern, created_at, archived_at
-		FROM monitor_urls
-		WHERE sku_id = $1 AND ativo = TRUE
-		ORDER BY created_at DESC
-		LIMIT 1
-	`, skuID).Scan(
-		&monitor.ID, &monitor.SKUID, &monitor.URL, &monitor.Ativo, &monitor.LimiarModo, &monitor.LimiarValor,
-		&monitor.CSSSelector, &monitor.RegexPattern, &monitor.CreatedAt, &monitor.ArchivedAt,
-	)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("get active monitor: %w", err)
-	}
-	return &monitor, nil
-}
-
 func (r *PostgresRepository) GetMonitorByID(ctx context.Context, id int64) (*domain.MonitorURL, error) {
 	var monitor domain.MonitorURL
 	err := r.pool.QueryRow(ctx, `
