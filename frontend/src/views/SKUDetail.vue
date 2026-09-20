@@ -77,12 +77,18 @@
     </div>
 
     <div v-if="activeTab === 'rastreio'" class="tab-content">
-      <div class="delta-card" v-if="deltaRastreio">
-        <h3>Última coleta (URL ativa)</h3>
-        <p class="price">R$ {{ formatPrice(deltaRastreio.current_preco) }}</p>
-        <p v-if="deltaRastreio.has_previous" class="delta" :class="deltaClass(deltaRastreio.delta_absoluto)">
-          {{ formatDelta(deltaRastreio) }}
-        </p>
+      <div v-if="deltaRastreioByURL.length">
+        <div class="delta-card" v-for="d in deltaRastreioByURL" :key="d.url">
+          <h3>{{ hostLabel(d.url) }}</h3>
+          <p class="url-label"><a :href="d.url" target="_blank">{{ d.url }}</a></p>
+          <p class="price">R$ {{ formatPrice(d.delta.current_preco) }}</p>
+          <p v-if="d.delta.has_previous" class="delta" :class="deltaClass(d.delta.delta_absoluto)">
+            {{ formatDelta(d.delta) }}
+          </p>
+        </div>
+      </div>
+      <div v-else-if="activeMonitors.length" class="delta-card empty-state">
+        <p>Nenhuma observação de rastreio ainda.</p>
       </div>
 
       <h3>Histórico de Rastreio</h3>
@@ -108,18 +114,21 @@
     </div>
 
     <div v-if="activeTab === 'monitor'" class="tab-content">
-      <div v-if="monitor" class="monitor-info">
-        <h3>Monitor Ativo</h3>
-        <p><strong>URL:</strong> <a :href="monitor.url" target="_blank">{{ monitor.url }}</a></p>
-        <p v-if="monitor.limiar_modo">
-          <strong>Limiar:</strong> 
-          {{ monitor.limiar_modo === 'absoluto' ? `R$ ${formatPrice(monitor.limiar_valor)}` : `${monitor.limiar_valor}%` }}
-          ({{ monitor.limiar_modo }})
-        </p>
-        <p v-else><em>Sem limiar de alerta configurado</em></p>
+      <div v-if="activeMonitors.length" class="monitor-info">
+        <h3>Monitores ativos (mesmo SKU · série por URL)</h3>
+        <div v-for="m in activeMonitors" :key="m.id" class="monitor-card">
+          <p><strong>URL:</strong> <a :href="m.url" target="_blank">{{ m.url }}</a></p>
+          <p v-if="m.limiar_modo">
+            <strong>Limiar:</strong>
+            {{ m.limiar_modo === 'absoluto' ? `R$ ${formatPrice(m.limiar_valor)}` : `${m.limiar_valor}%` }}
+            ({{ m.limiar_modo }})
+          </p>
+          <p v-else><em>Sem limiar</em></p>
+          <button type="button" class="btn btn-danger" @click="archiveMonitor(m.id)">Arquivar</button>
+        </div>
       </div>
 
-      <h3>{{ monitor ? 'Trocar URL (arquiva atual)' : 'Configurar Monitor' }}</h3>
+      <h3>Adicionar URL de rastreio</h3>
       <form @submit.prevent="submitMonitor" class="form">
         <div class="form-row">
           <label>URL para monitorar</label>
@@ -145,12 +154,18 @@
           <label>Valor do Limiar</label>
           <input v-model.number="monitorForm.limiar_valor" type="number" step="0.01" required />
         </div>
-        <button type="submit" class="btn">{{ monitor ? 'Trocar URL' : 'Criar Monitor' }}</button>
+        <button type="submit" class="btn">Adicionar monitor</button>
       </form>
 
-      <div v-if="monitor">
-        <h3>Atualizar Limiar</h3>
+      <div v-if="activeMonitors.length">
+        <h3>Atualizar limiar de um monitor</h3>
         <form @submit.prevent="updateLimiar" class="form">
+          <div class="form-row">
+            <label>Monitor</label>
+            <select v-model.number="limiarForm.monitor_id">
+              <option v-for="m in activeMonitors" :key="m.id" :value="m.id">{{ m.url }}</option>
+            </select>
+          </div>
           <div class="form-row">
             <label>Modo</label>
             <select v-model="limiarForm.limiar_modo">
@@ -195,8 +210,9 @@ export default {
       observacoesCompra: [],
       observacoesRastreio: [],
       deltaCompra: null,
-      deltaRastreio: null,
+      deltaRastreioByURL: [],
       monitor: null,
+      activeMonitors: [],
       monitorHistory: [],
       compraForm: { preco: null, quantidade: null, loja: '', notas: '' },
       monitorForm: { url: '', css_selector: '', regex_pattern: '', limiar_modo: null, limiar_valor: null },
@@ -211,10 +227,8 @@ export default {
       const id = this.$route.params.id
       try {
         this.sku = await api.getSKU(id)
-        await Promise.all([
-          this.loadObservacoes(),
-          this.loadMonitor()
-        ])
+        await this.loadMonitor()
+        await this.loadObservacoes()
       } catch (e) {
         this.error = e.message
       } finally {
@@ -231,15 +245,33 @@ export default {
       this.observacoesRastreio = rastreio || []
 
       this.deltaCompra = await api.getDelta(id, 'compra').catch(() => null)
-      this.deltaRastreio = await api.getDelta(id, 'rastreio').catch(() => null)
+
+      this.deltaRastreioByURL = []
+      for (const m of this.activeMonitors) {
+        const delta = await api.getDelta(id, 'rastreio', { url: m.url }).catch(() => null)
+        if (delta) {
+          this.deltaRastreioByURL.push({ url: m.url, delta })
+        }
+      }
     },
     async loadMonitor() {
       const id = this.sku.id
-      this.monitor = await api.getMonitor(id)
+      this.monitor = await api.getMonitor(id).catch(() => null)
       this.monitorHistory = await api.listMonitorHistory(id).catch(() => [])
-      if (this.monitor) {
-        this.limiarForm.limiar_modo = this.monitor.limiar_modo
-        this.limiarForm.limiar_valor = this.monitor.limiar_valor
+      this.activeMonitors = (this.monitorHistory || []).filter(m => m.ativo)
+      if (this.activeMonitors.length) {
+        const m = this.activeMonitors[0]
+        this.limiarForm.monitor_id = m.id
+        this.limiarForm.limiar_modo = m.limiar_modo
+        this.limiarForm.limiar_valor = m.limiar_valor
+      }
+    },
+    async archiveMonitor(monitorId) {
+      try {
+        await api.archiveMonitor(this.sku.id, monitorId)
+        await this.loadMonitor()
+      } catch (e) {
+        this.error = e.message
       }
     },
     async submitCompra() {
@@ -283,6 +315,7 @@ export default {
     async updateLimiar() {
       try {
         const data = {
+          monitor_id: this.limiarForm.monitor_id,
           limiar_modo: this.limiarForm.limiar_modo,
           limiar_valor: this.limiarForm.limiar_modo ? this.limiarForm.limiar_valor : null
         }
@@ -321,7 +354,15 @@ export default {
       return ''
     },
     isArchivedUrl(url) {
-      return this.monitor && url !== this.monitor.url
+      const activeURLs = this.activeMonitors.map(m => m.url)
+      return activeURLs.length > 0 && !activeURLs.includes(url)
+    },
+    hostLabel(url) {
+      try {
+        return new URL(url).hostname.replace(/^www\./, '')
+      } catch (e) {
+        return url
+      }
     }
   }
 }
@@ -577,5 +618,27 @@ export default {
 
 .error {
   color: #e74c3c;
+}
+.monitor-card {
+  border: 1px solid #eee;
+  border-radius: 8px;
+  padding: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.url-label {
+  font-size: 0.85rem;
+  color: #666;
+  margin-bottom: 0.5rem;
+}
+
+.url-label a {
+  color: #3498db;
+  word-break: break-all;
+}
+
+.empty-state {
+  color: #666;
+  font-style: italic;
 }
 </style>

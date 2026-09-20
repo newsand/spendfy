@@ -149,3 +149,58 @@ func TestCollector_ScrapePriceWithRegexWorks(t *testing.T) {
 		t.Errorf("expected price %s, got %s", expected.String(), price.String())
 	}
 }
+
+func TestCollector_FetchDeltaForMonitorIncludesURL(t *testing.T) {
+	var capturedURL string
+	var capturedQuery string
+
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedURL = r.URL.Path
+		capturedQuery = r.URL.RawQuery
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer apiServer.Close()
+
+	collector := NewCollector(Config{APIURL: apiServer.URL})
+
+	monitor := MonitorURL{
+		ID:    42,
+		SKUID: 123,
+		URL:   "https://araujo.example/p/vasenol",
+	}
+
+	_, _ = collector.fetchDeltaForMonitor(context.Background(), monitor)
+
+	if capturedURL != "/api/v1/skus/123/observacoes/delta" {
+		t.Errorf("expected delta path for SKU 123, got %s", capturedURL)
+	}
+
+	if capturedQuery == "" {
+		t.Fatal("expected query params, got empty")
+	}
+
+	if !contains(capturedQuery, "fonte=rastreio") {
+		t.Errorf("expected fonte=rastreio in query, got %s", capturedQuery)
+	}
+
+	if !contains(capturedQuery, "url=") {
+		t.Errorf("expected url= param in query (per-monitor delta), got %s", capturedQuery)
+	}
+
+	if !contains(capturedQuery, "araujo.example") {
+		t.Errorf("expected monitor URL in query, got %s", capturedQuery)
+	}
+}
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsAt(s, substr))
+}
+
+func containsAt(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}

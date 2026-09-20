@@ -87,28 +87,35 @@ type MonitorURL struct {
 }
 
 var (
-	ErrSKUNotFound            = errors.New("sku not found")
-	ErrObservacaoNotFound     = errors.New("observacao not found")
-	ErrMonitorNotFound        = errors.New("monitor not found")
-	ErrUnidadeMismatch        = errors.New("unidade must match sku unidade_padrao")
-	ErrURLRequiredForRastreio = errors.New("url required for fonte=rastreio")
-	ErrChaveIdentidadeExists  = errors.New("chave_identidade already exists")
-	ErrInvalidUnidade         = errors.New("invalid unidade")
-	ErrInvalidFonte           = errors.New("invalid fonte")
-	ErrInvalidLimiarModo      = errors.New("invalid limiar_modo")
-	ErrLimiarModoRequired     = errors.New("limiar_modo and limiar_valor must both be set or both be null")
+	ErrSKUNotFound              = errors.New("sku not found")
+	ErrObservacaoNotFound       = errors.New("observacao not found")
+	ErrMonitorNotFound          = errors.New("monitor not found")
+	ErrUnidadeMismatch          = errors.New("unidade must match sku unidade_padrao")
+	ErrURLRequiredForRastreio   = errors.New("url required for fonte=rastreio")
+	ErrChaveIdentidadeExists    = errors.New("chave_identidade already exists")
+	ErrInvalidUnidade           = errors.New("invalid unidade")
+	ErrInvalidFonte             = errors.New("invalid fonte")
+	ErrInvalidLimiarModo        = errors.New("invalid limiar_modo")
+	ErrLimiarModoRequired       = errors.New("limiar_modo and limiar_valor must both be set or both be null")
+	ErrURLOrMonitorIDRequired   = errors.New("url or monitor_id query param required for fonte=rastreio")
+	ErrMultipleActiveMonitors   = errors.New("multiple active monitors exist; specify url or monitor_id")
 )
 
 type TrackedSKU struct {
-	SKU             SKU               `json:"sku"`
-	LastCompra      *decimal.Decimal  `json:"last_compra,omitempty"`
-	LastCompraData  *time.Time        `json:"last_compra_data,omitempty"`
-	HasMonitor      bool              `json:"has_monitor"`
-	SeriesCompra    []PricePoint      `json:"series_compra"`
-	SeriesRastreio  []PricePoint      `json:"series_rastreio"`
+	SKU                SKU                 `json:"sku"`
+	LastCompra         *decimal.Decimal    `json:"last_compra,omitempty"`
+	LastCompraData     *time.Time          `json:"last_compra_data,omitempty"`
+	HasMonitor         bool                `json:"has_monitor"`
+	SeriesCompra       []PricePoint        `json:"series_compra"`
+	SeriesRastreioByURL []RastreioSeries   `json:"series_rastreio_by_url"`
 }
 
 type PricePoint struct {
 	Data  time.Time       `json:"data"`
 	Preco decimal.Decimal `json:"preco"`
+}
+
+type RastreioSeries struct {
+	URL    string       `json:"url"`
+	Points []PricePoint `json:"points"`
 }

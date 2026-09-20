@@ -58,12 +58,29 @@ export const api = {
     })
   },
 
-  getDelta(skuId, fonte) {
-    return request(`/skus/${skuId}/observacoes/delta?fonte=${fonte}`)
+  getDelta(skuId, fonte, options = {}) {
+    let params = `fonte=${fonte}`
+    if (options.url) {
+      params += `&url=${encodeURIComponent(options.url)}`
+    } else if (options.monitor_id) {
+      params += `&monitor_id=${options.monitor_id}`
+    }
+    return request(`/skus/${skuId}/observacoes/delta?${params}`)
   },
 
-  getMonitor(skuId) {
-    return request(`/skus/${skuId}/monitor`).catch(e => {
+  getMonitor(skuId, options = {}) {
+    let path = `/skus/${skuId}/monitor`
+    const params = []
+    if (options.url) {
+      params.push(`url=${encodeURIComponent(options.url)}`)
+    }
+    if (options.monitor_id) {
+      params.push(`monitor_id=${options.monitor_id}`)
+    }
+    if (params.length > 0) {
+      path += `?${params.join('&')}`
+    }
+    return request(path).catch(e => {
       if (e.message === 'no active monitor') return null
       throw e
     })
@@ -81,6 +98,10 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(data)
     })
+  },
+
+  archiveMonitor(skuId, monitorId) {
+    return request(`/skus/${skuId}/monitor/${monitorId}`, { method: 'DELETE' })
   },
 
   listMonitorHistory(skuId) {

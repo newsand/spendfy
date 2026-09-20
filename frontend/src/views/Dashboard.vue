@@ -129,31 +129,34 @@ export default {
       return new Date(val).toLocaleDateString('pt-BR')
     },
     hasSeries(item) {
-      return (item.series_compra && item.series_compra.length > 0) ||
-             (item.series_rastreio && item.series_rastreio.length > 0)
+      const byUrl = item.series_rastreio_by_url || []
+      const rastPts = byUrl.reduce((n, s) => n + ((s.points && s.points.length) || 0), 0)
+      return (item.series_compra && item.series_compra.length > 0) || rastPts > 0
+    },
+    hostLabel(url) {
+      try { return new URL(url).hostname.replace(/^www\./, '') } catch (e) { return url }
     },
     getChartData(item) {
       const compra = item.series_compra || []
-      const rastreio = item.series_rastreio || []
-
+      const byUrl = item.series_rastreio_by_url || []
+      const colors = ['#3498db', '#9b59b6', '#e67e22', '#1abc9c', '#e74c3c', '#34495e']
       const toMs = (val) => new Date(val).getTime()
       const labelFor = (val) =>
         new Date(val).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' })
 
+      const allPts = [...compra]
+      byUrl.forEach(s => (s.points || []).forEach(pt => allPts.push(pt)))
       const axisMap = new Map()
-      for (const p of [...compra, ...rastreio]) {
-        const t = toMs(p.data)
-        if (!axisMap.has(t)) axisMap.set(t, labelFor(p.data))
+      for (const pt of allPts) {
+        const ms = toMs(pt.data)
+        if (!axisMap.has(ms)) axisMap.set(ms, labelFor(pt.data))
       }
-      const axis = [...axisMap.entries()].sort((a, b) => a[0] - b[0]).map(([t, label]) => ({ t, label }))
-
-      const compraMap = new Map()
-      compra.forEach(p => compraMap.set(toMs(p.data), parseFloat(p.preco)))
-      const rastreioMap = new Map()
-      rastreio.forEach(p => rastreioMap.set(toMs(p.data), parseFloat(p.preco)))
+      const axis = [...axisMap.entries()].sort((a, b) => a[0] - b[0]).map(([ms, label]) => ({ t: ms, label }))
 
       const datasets = []
       if (compra.length > 0) {
+        const compraMap = new Map()
+        compra.forEach(pt => compraMap.set(toMs(pt.data), parseFloat(pt.preco)))
         datasets.push({
           label: 'Compra',
           data: axis.map(a => (compraMap.has(a.t) ? compraMap.get(a.t) : null)),
@@ -165,19 +168,21 @@ export default {
           spanGaps: true
         })
       }
-      if (rastreio.length > 0) {
+      byUrl.forEach((s, i) => {
+        const map = new Map()
+        ;(s.points || []).forEach(pt => map.set(toMs(pt.data), parseFloat(pt.preco)))
+        const color = colors[i % colors.length]
         datasets.push({
-          label: 'Rastreio',
-          data: axis.map(a => (rastreioMap.has(a.t) ? rastreioMap.get(a.t) : null)),
-          borderColor: '#3498db',
-          backgroundColor: 'rgba(52, 152, 219, 0.1)',
+          label: 'Rastreio · ' + this.hostLabel(s.url),
+          data: axis.map(a => (map.has(a.t) ? map.get(a.t) : null)),
+          borderColor: color,
+          backgroundColor: color + '1a',
           tension: 0.3,
           pointRadius: 4,
           pointHoverRadius: 6,
           spanGaps: true
         })
-      }
-
+      })
       return { labels: axis.map(a => a.label), datasets }
     }
   }

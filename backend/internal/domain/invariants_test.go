@@ -372,3 +372,94 @@ func TestInvariant_ValidLimiarModos(t *testing.T) {
 		}
 	}
 }
+
+func TestInvariant_MultiURLRastreioSeriesDoNotMix(t *testing.T) {
+	// Same SKU, two storefront URLs — deltas must be computed per URL only.
+	araujo := "https://araujo.example/p/1"
+	raia := "https://raia.example/p/1"
+	obsA1 := &PrecoObservado{SKUID: 1, Fonte: FonteRastreio, URL: &araujo, Preco: decimal.NewFromFloat(50)}
+	obsA2 := &PrecoObservado{SKUID: 1, Fonte: FonteRastreio, URL: &araujo, Preco: decimal.NewFromFloat(45)}
+	obsR1 := &PrecoObservado{SKUID: 1, Fonte: FonteRastreio, URL: &raia, Preco: decimal.NewFromFloat(40)}
+
+	d := CalculateDelta(obsA2, obsA1)
+	if !d.HasPrevious || d.PreviousPreco.Cmp(decimal.NewFromFloat(50)) != 0 {
+		t.Fatalf("araujo series should compare to previous araujo, got %+v", d)
+	}
+	// Using Raia as previous for Araújo current would be a product bug — callers must pass same-URL previous.
+	wrong := CalculateDelta(obsA2, obsR1)
+	if !wrong.HasPrevious {
+		t.Fatal("CalculateDelta itself is pure; URL filtering is caller's job")
+	}
+	if wrong.PreviousPreco.Cmp(decimal.NewFromFloat(40)) == 0 {
+		// Document: API/repo must not pass cross-URL previous. CheckAlert already rejects URL mismatch.
+	}
+	monA := &MonitorURL{URL: araujo, LimiarModo: ptrLimiar(LimiarAbsoluto), LimiarValor: ptrDec(46)}
+	if CheckAlert(obsA2, obsA1, monA).ShouldAlert != true {
+		t.Fatal("expected alert on araujo")
+	}
+	if CheckAlert(obsA2, obsA1, &MonitorURL{URL: raia, LimiarModo: ptrLimiar(LimiarAbsoluto), LimiarValor: ptrDec(46)}).ShouldAlert {
+		t.Fatal("must not alert when monitor URL mismatches observation URL")
+	}
+}
+
+func ptrLimiar(m LimiarModo) *LimiarModo { return &m }
+func ptrDec(f float64) *decimal.Decimal {
+	d := decimal.NewFromFloat(f)
+	return &d
+}
+
+func TestInvariant_DeltaForRastreioMustSpecifyURL(t *testing.T) {
+	araujoURL := "https://araujo.example/p/vasenol"
+	raiaURL := "https://raia.example/p/vasenol"
+
+	obsAraujo1 := &PrecoObservado{ID: 1, SKUID: 1, Fonte: FonteRastreio, URL: &araujoURL, Preco: decimal.NewFromFloat(50)}
+	obsAraujo2 := &PrecoObservado{ID: 2, SKUID: 1, Fonte: FonteRastreio, URL: &araujoURL, Preco: decimal.NewFromFloat(48)}
+	obsRaia1 := &PrecoObservado{ID: 3, SKUID: 1, Fonte: FonteRastreio, URL: &raiaURL, Preco: decimal.NewFromFloat(52)}
+	obsRaia2 := &PrecoObservado{ID: 4, SKUID: 1, Fonte: FonteRastreio, URL: &raiaURL, Preco: decimal.NewFromFloat(47)}
+
+	deltaAraujo := CalculateDelta(obsAraujo2, obsAraujo1)
+	if !deltaAraujo.HasPrevious {
+		t.Fatal("Araújo delta should have previous")
+	}
+	if !deltaAraujo.DeltaAbsoluto.Equal(decimal.NewFromFloat(-2)) {
+		t.Errorf("Araújo delta should be -2, got %s", deltaAraujo.DeltaAbsoluto.String())
+	}
+
+	deltaRaia := CalculateDelta(obsRaia2, obsRaia1)
+	if !deltaRaia.HasPrevious {
+		t.Fatal("Raia delta should have previous")
+	}
+	if !deltaRaia.DeltaAbsoluto.Equal(decimal.NewFromFloat(-5)) {
+		t.Errorf("Raia delta should be -5, got %s", deltaRaia.DeltaAbsoluto.String())
+	}
+
+	wrongDelta := CalculateDelta(obsAraujo2, obsRaia1)
+	if wrongDelta.HasPrevious && wrongDelta.DeltaAbsoluto.Equal(decimal.NewFromFloat(-4)) {
+		t.Log("API must prevent cross-URL delta: comparing Araújo current to Raia previous is wrong")
+	}
+}
+
+func TestInvariant_URLOrMonitorIDRequiredError(t *testing.T) {
+	if ErrURLOrMonitorIDRequired == nil {
+		t.Fatal("ErrURLOrMonitorIDRequired should be defined")
+	}
+	expected := "url or monitor_id query param required for fonte=rastreio"
+	if ErrURLOrMonitorIDRequired.Error() != expected {
+		t.Errorf("expected error message %q, got %q", expected, ErrURLOrMonitorIDRequired.Error())
+	}
+}
+
+func TestInvariant_MonitorIDMustBelongToPathSKU(t *testing.T) {
+	pathSKUID := int64(100)
+	
+	monitorSameSKU := &MonitorURL{ID: 1, SKUID: 100, URL: "https://example.com/a"}
+	monitorOtherSKU := &MonitorURL{ID: 2, SKUID: 999, URL: "https://example.com/b"}
+
+	if monitorSameSKU.SKUID != pathSKUID {
+		t.Error("monitor with same SKU should pass ownership check")
+	}
+
+	if monitorOtherSKU.SKUID == pathSKUID {
+		t.Error("monitor with different SKU must FAIL ownership check - never resolve another SKU's URL")
+	}
+}

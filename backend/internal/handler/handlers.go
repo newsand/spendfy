@@ -33,6 +33,7 @@ func (h *Handlers) RegisterRoutes(r chi.Router) {
 
 			r.Get("/{id}/monitor", h.GetMonitor)
 			r.Post("/{id}/monitor", h.SetMonitor)
+			r.Delete("/{id}/monitor/{monitorID}", h.ArchiveMonitor)
 			r.Put("/{id}/monitor/limiar", h.UpdateMonitorLimiar)
 			r.Get("/{id}/monitor/history", h.ListMonitorHistory)
 		})
@@ -235,8 +236,36 @@ func (h *Handlers) GetDelta(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.svc.GetDelta(r.Context(), skuID, fonte)
+	var url *string
+	var monitorID *int64
+
+	if fonte == domain.FonteRastreio {
+		urlParam := r.URL.Query().Get("url")
+		monitorIDParam := r.URL.Query().Get("monitor_id")
+
+		if urlParam == "" && monitorIDParam == "" {
+			writeError(w, http.StatusBadRequest, domain.ErrURLOrMonitorIDRequired.Error())
+			return
+		}
+		if urlParam != "" {
+			url = &urlParam
+		}
+		if monitorIDParam != "" {
+			mid, err := strconv.ParseInt(monitorIDParam, 10, 64)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "invalid monitor_id")
+				return
+			}
+			monitorID = &mid
+		}
+	}
+
+	result, err := h.svc.GetDelta(r.Context(), skuID, fonte, url, monitorID)
 	if err != nil {
+		if errors.Is(err, domain.ErrMonitorNotFound) {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -254,16 +283,33 @@ func (h *Handlers) GetMonitor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	monitor, err := h.svc.GetActiveMonitor(r.Context(), skuID)
+	urlParam := r.URL.Query().Get("url")
+	monitorIDParam := r.URL.Query().Get("monitor_id")
+
+	if urlParam != "" || monitorIDParam != "" {
+		monitor, err := h.svc.GetActiveMonitorByURLOrID(r.Context(), skuID, urlParam, monitorIDParam)
+		if err != nil {
+			if errors.Is(err, domain.ErrMonitorNotFound) {
+				writeError(w, http.StatusNotFound, err.Error())
+				return
+			}
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, monitor)
+		return
+	}
+
+	monitors, err := h.svc.ListActiveMonitorsBySKU(r.Context(), skuID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if monitor == nil {
+	if len(monitors) == 0 {
 		writeError(w, http.StatusNotFound, "no active monitor")
 		return
 	}
-	writeJSON(w, http.StatusOK, monitor)
+	writeJSON(w, http.StatusOK, monitors)
 }
 
 func (h *Handlers) SetMonitor(w http.ResponseWriter, r *http.Request) {
@@ -349,6 +395,29 @@ func (h *Handlers) ListActiveMonitors(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, monitors)
+}
+
+
+func (h *Handlers) ArchiveMonitor(w http.ResponseWriter, r *http.Request) {
+	skuID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	monitorID, err := strconv.ParseInt(chi.URLParam(r, "monitorID"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid monitor id")
+		return
+	}
+	if err := h.svc.ArchiveMonitor(r.Context(), skuID, monitorID); err != nil {
+		if errors.Is(err, domain.ErrMonitorNotFound) {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handlers) ListTrackedSKUs(w http.ResponseWriter, r *http.Request) {
